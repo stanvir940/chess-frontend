@@ -1,9 +1,14 @@
-// api.js
+// src/api.js
 import axios from "axios";
-const API_BASE = "http://127.0.0.1:8001";
 
-export async function sendMove(fen, uciMove, depth = 2) {
-  const payload = { fen, move: uciMove, depth };
-  const res = await axios.post(`${API_BASE}/move`, payload);
-  return res.data;
-}
+const API_URL = "http://localhost:8001"; // Backend API URL
+
+export const sendMove = async (fen, move) => {
+  try {
+    const response = await axios.post(`${API_URL}/move`, { fen, move });
+    return response.data;
+  } catch (error) {
+    console.error("Error sending move:", error);
+    return { error: "Failed to make move" };
+  }
+};
