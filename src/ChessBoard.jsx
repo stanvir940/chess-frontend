@@ -85,7 +85,7 @@ function computeCaptured(fen) {
 export default function ChessBoard({
   position = "start",
   onDrop,
-  boardSize = 560,
+  boardSize = 960,
 }) {
   const pieceMap = useMemo(() => fenToMap(position), [position]);
   const [selected, setSelected] = useState(null);
@@ -221,6 +221,7 @@ export default function ChessBoard({
           flex: "0 0 auto",
           display: "grid",
           gridTemplateColumns: "repeat(8, 1fr)",
+          gridTemplateRows: "repeat(8, 1fr)",
           borderRadius: 12,
           overflow: "hidden",
           boxShadow: "0 8px 30px rgba(0,0,0,0.7)",
@@ -258,7 +259,10 @@ export default function ChessBoard({
                 }}
               >
                 {piece ? (
-                  <span style={{ transform: "translateY(-2px)", fontSize: 44 }}>
+                  <span
+                    className="text-black"
+                    style={{ transform: "translateY(-2px)", fontSize: 40 }}
+                  >
                     {PIECE_UNICODE[piece] || piece}
                   </span>
                 ) : null}

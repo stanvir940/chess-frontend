@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import ChessBoard from "./ChessBoard";
 import { sendMove } from "./api";
 import ErrorBoundary from "./ErrorBoundary";
+import Test from "./Test";
 
 const App = () => {
   const [fen, setFen] = useState("start");
