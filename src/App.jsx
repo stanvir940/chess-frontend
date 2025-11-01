@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef } from "react";
 import ChessBoard from "./ChessBoard";
 import { sendMove } from "./api";
 import ErrorBoundary from "./ErrorBoundary";
-import Test from "./Test";
+import AudioPlayer from "./AudioPlayer";
 
 const App = () => {
   const [fen, setFen] = useState("start");
   const [gameOver, setGameOver] = useState(false);
+  const [winner, setWinner] = useState(null);
+  const [winnerReason, setWinnerReason] = useState(null);
   const [isThinking, setIsThinking] = useState(false);
   const [started, setStarted] = useState(false);
   const [initialMinutes, setInitialMinutes] = useState(10);
@@ -15,9 +17,33 @@ const App = () => {
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [engineDepth, setEngineDepth] = useState(2);
 
+  // active side tracking (fixes timer behavior during pending engine move)
+  const [activeIsWhite, setActiveIsWhite] = useState(true);
+
+  // last move for highlighting (uci: e2e4 or e7e8q)
+  const [lastMove, setLastMove] = useState(null);
+
   const timerRef = useRef(null);
 
-  // Timer useEffect remains the same as your original
+  // sound state
+  const [soundToPlay, setSoundToPlay] = useState(null);
+
+  // small WebAudio move / capture / gameover sound
+  const playSound = (type = "move") => {
+    // Based on the type, set the correct audio file to play
+    if (type === "move") {
+      const audio = new Audio("../public/moves.mp3");
+      audio.play();
+    } else if (type === "capture") {
+      const audio = new Audio("../public/capture.mp3");
+      audio.play();
+    } else if (type === "gameover") {
+      const audio = new Audio("../public/checkmate.mp3");
+      audio.play();
+    }
+  };
+
+  // Timer handling — use activeIsWhite so pending engine thinking counts correctly
   useEffect(() => {
     if (!started || !isTimerRunning || gameOver) {
       if (timerRef.current) {
@@ -28,12 +54,15 @@ const App = () => {
     }
     if (timerRef.current) return;
     timerRef.current = setInterval(() => {
-      const activeIsWhite = fen.includes(" w ");
       if (activeIsWhite) {
         setWhiteTime((t) => {
           if (t <= 1) {
             setGameOver(true);
             setIsTimerRunning(false);
+            setWinner("black");
+            setWinnerReason("timeout");
+            playSound("gameover");
+
             return 0;
           }
           return t - 1;
@@ -43,6 +72,10 @@ const App = () => {
           if (t <= 1) {
             setGameOver(true);
             setIsTimerRunning(false);
+            setWinner("white");
+            setWinnerReason("timeout");
+            playSound("gameover");
+
             return 0;
           }
           return t - 1;
@@ -55,21 +88,61 @@ const App = () => {
         timerRef.current = null;
       }
     };
-  }, [started, isTimerRunning, fen, gameOver]);
+  }, [started, isTimerRunning, activeIsWhite, gameOver]);
 
+  // handle player move -> call backend. flip active side immediately so engine time is deducted while thinking.
   const handleDrop = async (sourceSquare, targetSquareParam) => {
-    if (isThinking || !started) return false;
-    const move = `${sourceSquare}${targetSquareParam}`;
+    if (isThinking || !started || gameOver) return false;
+    const playerMove = `${sourceSquare}${targetSquareParam}`;
+
+    // optimistic: mark lastMove as player's move so UI shows it immediately
+    setLastMove(playerMove);
+    // flip active side to engine (so engine clock counts while backend is thinking)
+    setActiveIsWhite(false);
+
     setIsThinking(true);
     try {
-      const data = await sendMove(fen, move, engineDepth);
+      const data = await sendMove(fen, playerMove, engineDepth);
       if (data) {
+        // backend returns fen after both moves (player applied and engine applied if any)
         setFen(data.fen);
-        setGameOver(data.game_over);
+        setGameOver(Boolean(data.game_over));
+
+        // if engine played, show engine move as last move
+        if (data.engine_move) {
+          setLastMove(data.engine_move);
+        } else {
+          // no engine move (maybe game over); keep player's move as last
+        }
+
+        // set active side according to returned fen (robust instead of parsing " w ")
+        if (data.fen && typeof data.fen === "string") {
+          const parts = data.fen.split(" ");
+          const side = parts[1] || "w";
+          setActiveIsWhite(side === "w");
+        }
+
+        // play sound for move
+        playSound("move");
+
+        // handle game result if provided by backend
+        if (data.game_over) {
+          // prefer backend winner/reason if provided
+          if (data.winner) setWinner(data.winner);
+          if (data.reason) setWinnerReason(data.reason);
+
+          // play gameover sound
+          playSound("gameover");
+        }
       }
       return true;
     } catch (err) {
       console.error("Move failed:", err);
+      // revert active side to who should move (keep activeIsWhite based on fen)
+      if (fen && typeof fen === "string") {
+        const p = fen.split(" ");
+        setActiveIsWhite((p[1] || "w") === "w");
+      }
       return false;
     } finally {
       setIsThinking(false);
@@ -78,17 +151,30 @@ const App = () => {
 
   const formatTime = (seconds) => {
     const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
+    const remainingSeconds = Math.max(0, seconds % 60);
     return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
   };
 
+  const handleStart = () => {
+    setWhiteTime(initialMinutes * 60);
+    setBlackTime(initialMinutes * 60);
+    setFen("start");
+    setStarted(true);
+    setIsTimerRunning(true);
+    setActiveIsWhite(true);
+    setGameOver(false);
+    setWinner(null);
+    setWinnerReason(null);
+    setLastMove(null);
+  };
+
   return (
-    <div className="min-h-screen bg-[#1f1f1f] text-white flex">
+    <div className="min-h-screen bg-[#1f1f1f] text-white flex p-6">
       {/* Left Sidebar - Main Navigation */}
       <div className="w-64 bg-[#2c2c2c] border-r border-[#3d3d3d] flex flex-col">
         {/* Logo */}
         <div className="p-6 border-b border-[#3d3d3d]">
-          <h1 className="text-2xl font-bold text-white">Chessom</h1>
+          <h1 className="text-2xl font-bold text-white">Chess Ai</h1>
         </div>
 
         {/* Navigation Menu */}
@@ -224,7 +310,7 @@ const App = () => {
                       type="number"
                       value={initialMinutes}
                       onChange={(e) =>
-                        setInitialMinutes(Number(e.target.value))
+                        setInitialMinutes(Number(e.target.value) || 1)
                       }
                       className="w-full bg-[#3d3d3d] border border-[#4d4d4d] rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#2196F3]"
                     />
@@ -239,18 +325,15 @@ const App = () => {
                       min="1"
                       max="6"
                       value={engineDepth}
-                      onChange={(e) => setEngineDepth(Number(e.target.value))}
+                      onChange={(e) =>
+                        setEngineDepth(Number(e.target.value) || 1)
+                      }
                       className="w-full bg-[#3d3d3d] border border-[#4d4d4d] rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#2196F3]"
                     />
                   </div>
 
                   <button
-                    onClick={() => {
-                      setWhiteTime(initialMinutes * 60);
-                      setBlackTime(initialMinutes * 60);
-                      setStarted(true);
-                      setIsTimerRunning(true);
-                    }}
+                    onClick={handleStart}
                     className="w-full bg-[#2196F3] hover:bg-[#1976D2] text-white font-semibold py-3 rounded-lg transition-colors mt-4"
                   >
                     Start Game vs AI
@@ -269,6 +352,7 @@ const App = () => {
                       position={fen}
                       onDrop={handleDrop}
                       boardSize={560}
+                      lastMove={lastMove}
                     />
                   </div>
 
@@ -279,10 +363,8 @@ const App = () => {
                       <div className="space-y-4">
                         <div
                           className={`p-4 rounded-lg ${
-                            fen.includes(" w ")
-                              ? "bg-[#2196F3]"
-                              : "bg-[#3d3d3d]"
-                          }`}
+                            activeIsWhite ? "bg-[#2196F3]" : "bg-[#3d3d3d]"
+                          } transition-colors`}
                         >
                           <div className="text-sm text-gray-300">White</div>
                           <div className="text-2xl font-bold">
@@ -291,10 +373,8 @@ const App = () => {
                         </div>
                         <div
                           className={`p-4 rounded-lg ${
-                            fen.includes(" b ")
-                              ? "bg-[#2196F3]"
-                              : "bg-[#3d3d3d]"
-                          }`}
+                            !activeIsWhite ? "bg-[#2196F3]" : "bg-[#3d3d3d]"
+                          } transition-colors`}
                         >
                           <div className="text-sm text-gray-300">Black</div>
                           <div className="text-2xl font-bold">
@@ -316,6 +396,7 @@ const App = () => {
                             onClick={() => {
                               setWhiteTime(initialMinutes * 60);
                               setBlackTime(initialMinutes * 60);
+                              setIsTimerRunning(false);
                             }}
                             className="px-4 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white py-2 rounded transition-colors"
                           >
@@ -326,20 +407,29 @@ const App = () => {
                         <div className="text-center">
                           {gameOver ? (
                             <div className="text-red-400 font-semibold">
-                              Game Over
+                              {winner === "white"
+                                ? "White wins"
+                                : winner === "black"
+                                ? "Black wins"
+                                : "Draw"}
+                              {winnerReason ? ` — ${winnerReason}` : ""}
                             </div>
                           ) : (
                             <div className="text-gray-400">
                               Turn:{" "}
                               <span className="text-white font-semibold">
-                                {fen.includes(" w ") ? "White" : "Black"}
+                                {activeIsWhite ? "White" : "Black"}
                               </span>
                             </div>
                           )}
                         </div>
 
                         <button
-                          onClick={() => setStarted(false)}
+                          onClick={() => {
+                            // reset to start screen
+                            setStarted(false);
+                            setIsTimerRunning(false);
+                          }}
                           className="w-full bg-[#4CAF50] hover:bg-[#45a045] text-white font-semibold py-2 rounded transition-colors"
                         >
                           New Game

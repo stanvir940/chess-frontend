@@ -3,10 +3,12 @@
 @tailwind utilities;
 
 body {
-  background-color: #f5f6fa;
+  background-color: #38393a;
   font-family: "Inter", sans-serif;
   display: flex;
   justify-content: center;
   align-items: center;
   height: 100vh;
+  padding: 2em 6em;
+  padding-top: 5em;
 }

@@ -85,7 +85,8 @@ function computeCaptured(fen) {
 export default function ChessBoard({
   position = "start",
   onDrop,
-  boardSize = 960,
+  boardSize = 560,
+  lastMove = null,
 }) {
   const pieceMap = useMemo(() => fenToMap(position), [position]);
   const [selected, setSelected] = useState(null);
@@ -207,8 +208,15 @@ export default function ChessBoard({
 
   const { whiteTaken, blackTaken } = computeCaptured(position);
 
+  // compute last move highlight squares
+  const lastFrom = lastMove ? lastMove.slice(0, 2) : null;
+  const lastTo = lastMove ? lastMove.slice(2, 4) : null;
+
+  // piece size depends on board size
+  const pieceFontSize = Math.max(36, Math.floor(boardSize * 0.12));
+
   return (
-    <div className="flex items-start gap-6 w-full max-w-[1000px]">
+    <div className="flex items-start gap-6 w-full max-w-[1000px] p-8">
       {/* Board */}
       <div
         role="grid"
@@ -235,6 +243,11 @@ export default function ChessBoard({
             const piece = localMap[sq];
             const isSelected = selected === sq;
             const allowed = allowedMap[sq];
+
+            // highlight last move squares
+            const isLastFrom = lastFrom === sq;
+            const isLastTo = lastTo === sq;
+
             return (
               <button
                 key={sq}
@@ -247,7 +260,6 @@ export default function ChessBoard({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 42,
                   background: squareColor(fileIdx, rankIdx),
                   border: isSelected
                     ? "3px solid #4f46e5"
@@ -256,15 +268,38 @@ export default function ChessBoard({
                     : "1px solid rgba(0,0,0,0.06)",
                   padding: 0,
                   cursor: allowed || piece || selected ? "pointer" : "default",
+                  position: "relative",
                 }}
               >
+                {/* last move overlay */}
+                {(isLastFrom || isLastTo) && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 6,
+                      borderRadius: 6,
+                      background: isLastFrom
+                        ? "rgba(79,70,229,0.18)"
+                        : "rgba(16,185,129,0.18)",
+                      boxShadow: "inset 0 0 0 2px rgba(255,255,255,0.03)",
+                      pointerEvents: "none",
+                    }}
+                  />
+                )}
+
                 {piece ? (
                   <span
-                    className="text-black"
-                    style={{ transform: "translateY(-2px)", fontSize: 40 }}
+                    className="select-none text-black"
+                    style={{
+                      transform: "translateY(-2px)",
+                      fontSize: pieceFontSize,
+                      lineHeight: 1,
+                    }}
                   >
                     {PIECE_UNICODE[piece] || piece}
                   </span>
+                ) : allowed ? (
+                  <div className="w-3 h-3 rounded-full bg-green-500/80" />
                 ) : null}
               </button>
             );
@@ -275,12 +310,7 @@ export default function ChessBoard({
       {/* Side UI */}
       <div style={{ minWidth: 220, color: "#fff" }}>
         <div style={{ marginBottom: 12 }}>
-          <strong
-            style={{ fontSize: 18, color: "black" }}
-            className=" text-black"
-          >
-            Controls
-          </strong>
+          <strong style={{ fontSize: 18, color: "white" }}>Controls</strong>
         </div>
 
         <div style={{ fontSize: 14, color: "#cbd5e1" }}>
